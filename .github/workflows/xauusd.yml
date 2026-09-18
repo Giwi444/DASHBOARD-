@@ -2,41 +2,53 @@ name: Build APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find Flutter project
+      - name: Find and extract Android project
+        shell: bash
         run: |
-          echo "Searching for pubspec.yaml..."
-          find . -name pubspec.yaml -print
+          set -e
+          ZIP=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No project ZIP file was found in the repository."
+            echo "Upload LiquiditySweepDashboard_v1.1_Complete.zip to the repository first."
+            exit 1
+          fi
+          echo "Using ZIP: $ZIP"
+          mkdir -p android_project
+          unzip -q "$ZIP" -d android_project
+          ROOT=$(find android_project -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print -quit | xargs -r dirname)
+          if [ -z "$ROOT" ]; then
+            echo "ERROR: settings.gradle was not found inside the ZIP."
+            exit 1
+          fi
+          echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "Android project found at: $ROOT"
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
-          flutter-version: '3.35.2'
-          channel: stable
-          cache: true
+          distribution: temurin
+          java-version: "17"
 
-      - name: Flutter Doctor
-        run: flutter doctor -v
-
-      - name: Flutter Pub Get
-        run: flutter pub get
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
 
       - name: Build APK
-        run: flutter build apk --release
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DASHBOARD-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: LiquiditySweepDashboard-v1.1-APK
+          path: ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/debug/app-debug.apk
